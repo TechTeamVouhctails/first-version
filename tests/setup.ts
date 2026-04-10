@@ -1,0 +1,11 @@
+process.env.NODE_ENV = "test";
+process.env.PORT = "9999";
+process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://user:pass@localhost:5432/test";
+process.env.SUPABASE_URL = process.env.SUPABASE_URL ?? "https://example.supabase.co";
+process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "test-anon-key";
+process.env.SUPABASE_JWKS_URL = process.env.SUPABASE_JWKS_URL ?? "https://example.supabase.co/auth/v1/.well-known/jwks.json";
+process.env.RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID ?? "rzp_test_xxx";
+process.env.RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET ?? "test_secret";
+process.env.RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET ?? "test_webhook_secret";
+process.env.INTERNAL_PAYOUT_TOKEN = process.env.INTERNAL_PAYOUT_TOKEN ?? "internal_token";
+process.env.CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3000";

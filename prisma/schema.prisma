@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PET_PARENT
+  PROVIDER
+}
+
+enum ServiceType {
+  WALKING
+  SITTING
+  GROOMING
+  BOARDING
+}
+
+enum BookingState {
+  REQUESTED
+  CONFIRMED
+  OTP_READY
+  IN_PROGRESS
+  PENDING_END_OTP
+  PENDING_PAYMENT
+  COMPLETED
+  PAYOUT_PENDING
+  PAID_OUT
+  CANCELLED_BY_OWNER
+  CANCELLED_BY_PROVIDER
+  DISPUTED
+}
+
+enum PaymentStage {
+  DEPOSIT
+  FINAL
+  PAYOUT
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id              String          @id @default(cuid())
+  supabaseUserId  String          @unique
+  phone           String?         @unique
+  email           String?         @unique
+  name            String?
+  role            Role?
+  city            String          @default("Chennai")
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  pets            Pet[]
+  providerProfile ProviderProfile?
+  ownerBookings   Booking[]       @relation("OwnerBookings")
+  providerBookings Booking[]      @relation("ProviderBookings")
+  sentMessages    ChatMessage[]   @relation("MessageSender")
+  recvMessages    ChatMessage[]   @relation("MessageReceiver")
+  transitions     BookingStateLog[]
+}
+
+model Pet {
+  id          String   @id @default(cuid())
+  ownerId     String
+  name        String
+  species     String
+  breed       String?
+  ageYears    Int?
+  weightKg    Decimal? @db.Decimal(5, 2)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  bookings    Booking[]
+
+  @@index([ownerId, createdAt])
+}
+
+model ProviderProfile {
+  id               String        @id @default(cuid())
+  userId           String        @unique
+  bio              String?
+  serviceTypes     ServiceType[]
+  baseRate         Decimal       @db.Decimal(10, 2)
+  rating           Decimal       @default(5.0) @db.Decimal(3, 2)
+  completedJobs    Int           @default(0)
+  latitude         Decimal       @db.Decimal(10, 7)
+  longitude        Decimal       @db.Decimal(10, 7)
+  radiusKm         Int           @default(10)
+  isVerified       Boolean       @default(false)
+  isAvailable      Boolean       @default(true)
+  city             String        @default("Chennai")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([city, isAvailable])
+  @@index([latitude, longitude])
+}
+
+model Booking {
+  id               String              @id @default(cuid())
+  ownerId          String
+  providerId       String
+  petId            String
+  serviceType      ServiceType
+  state            BookingState        @default(REQUESTED)
+  city             String              @default("Chennai")
+  address          String
+  latitude         Decimal             @db.Decimal(10, 7)
+  longitude        Decimal             @db.Decimal(10, 7)
+  startsAt         DateTime
+  endsAt           DateTime
+  estimatedAmount  Decimal             @db.Decimal(10, 2)
+  depositAmount    Decimal             @db.Decimal(10, 2)
+  finalAmount      Decimal             @db.Decimal(10, 2)
+  otpStartHash     String?
+  otpEndHash       String?
+  depositPaidAt    DateTime?
+  finalPaidAt      DateTime?
+  completedAt      DateTime?
+  payoutReleasedAt DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  owner            User                @relation("OwnerBookings", fields: [ownerId], references: [id], onDelete: Restrict)
+  provider         User                @relation("ProviderBookings", fields: [providerId], references: [id], onDelete: Restrict)
+  pet              Pet                 @relation(fields: [petId], references: [id], onDelete: Restrict)
+  transactions     PaymentTransaction[]
+  messages         ChatMessage[]
+  sessionTracks    SessionTracking[]
+  stateLogs        BookingStateLog[]
+
+  @@index([ownerId, state, startsAt])
+  @@index([providerId, state, startsAt])
+  @@index([state, city, startsAt])
+}
+
+model PaymentTransaction {
+  id              String        @id @default(cuid())
+  bookingId       String
+  stage           PaymentStage
+  status          PaymentStatus @default(CREATED)
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("INR")
+  orderId         String?       @unique
+  paymentId       String?       @unique
+  signature       String?
+  idempotencyKey  String        @unique
+  webhookEventId  String?       @unique
+  metadata        Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, stage, status])
+  @@index([status, createdAt])
+}
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  bookingId   String
+  senderId    String
+  receiverId  String
+  body        String
+  createdAt   DateTime @default(now())
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sender      User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+  receiver    User     @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, createdAt])
+}
+
+model SessionTracking {
+  id          String   @id @default(cuid())
+  bookingId   String
+  providerId  String
+  latitude    Decimal  @db.Decimal(10, 7)
+  longitude   Decimal  @db.Decimal(10, 7)
+  speedKmph   Decimal? @db.Decimal(6, 2)
+  accuracyM   Decimal? @db.Decimal(6, 2)
+  batteryPct  Int?
+  recordedAt  DateTime @default(now())
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, recordedAt])
+  @@index([providerId, recordedAt])
+}
+
+model BookingStateLog {
+  id         String       @id @default(cuid())
+  bookingId  String
+  fromState  BookingState
+  toState    BookingState
+  actorId    String
+  reason     String?
+  createdAt  DateTime     @default(now())
+  booking    Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  actor      User          @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, createdAt])
+}
