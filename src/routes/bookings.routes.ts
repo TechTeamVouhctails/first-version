@@ -9,8 +9,10 @@ import { softLockMiddleware } from "../middleware/softLock.js";
 import { validate } from "../middleware/validate.js";
 import {
   bookingIdSchema,
+  bookingScopeStates,
   cancelBookingSchema,
   createBookingSchema,
+  listBookingsSchema,
   otpSubmitSchema,
   sessionTrackSchema
 } from "../schemas/booking.schema.js";
@@ -22,6 +24,63 @@ import { AppError } from "../utils/errors.js";
 export const bookingsRouter = Router();
 
 bookingsRouter.use(authMiddleware);
+
+bookingsRouter.get(
+  "/",
+  validate(listBookingsSchema),
+  asyncHandler(async (req, res) => {
+    const { as, scope, limit, cursor } = req.query as unknown as {
+      as?: "owner" | "provider" | "all";
+      scope: "active" | "past" | "all";
+      limit: number;
+      cursor?: string;
+    };
+
+    const userId = req.auth!.userId;
+    const role = req.auth!.role;
+
+    let perspective: "owner" | "provider" | "all" = "all";
+    if (as) {
+      perspective = as;
+    } else if (role === "PET_PARENT") {
+      perspective = "owner";
+    } else if (role === "PROVIDER") {
+      perspective = "provider";
+    }
+
+    const stateFilter = bookingScopeStates(scope);
+
+    const partyOr =
+      perspective === "owner"
+        ? { ownerId: userId }
+        : perspective === "provider"
+          ? { providerId: userId }
+          : { OR: [{ ownerId: userId }, { providerId: userId }] };
+
+    const where = {
+      ...partyOr,
+      ...(stateFilter ? { state: { in: stateFilter } } : {})
+    };
+
+    const bookings = await prisma.booking.findMany({
+      where,
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      orderBy: [{ startsAt: "desc" }, { id: "desc" }],
+      include: {
+        pet: { select: { id: true, name: true, species: true } },
+        owner: { select: { id: true, name: true, phone: true } },
+        provider: { select: { id: true, name: true, phone: true } }
+      }
+    });
+
+    const hasMore = bookings.length > limit;
+    const page = hasMore ? bookings.slice(0, limit) : bookings;
+    const nextCursor = hasMore ? page[page.length - 1]?.id : undefined;
+
+    return res.status(StatusCodes.OK).json({ bookings: page, nextCursor });
+  })
+);
 
 bookingsRouter.post(
   "/",
@@ -65,6 +124,27 @@ bookingsRouter.post(
     });
 
     return res.status(StatusCodes.CREATED).json({ booking });
+  })
+);
+
+bookingsRouter.get(
+  "/:bookingId",
+  validate(bookingIdSchema),
+  asyncHandler(async (req, res) => {
+    const { bookingId } = req.params as { bookingId: string };
+    const booking = await prisma.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      include: {
+        pet: true,
+        owner: { select: { id: true, name: true, phone: true, email: true } },
+        provider: { select: { id: true, name: true, phone: true, email: true } },
+        transactions: { orderBy: { createdAt: "desc" }, take: 30 }
+      }
+    });
+    if (![booking.ownerId, booking.providerId].includes(req.auth!.userId)) {
+      throw new AppError("Forbidden", StatusCodes.FORBIDDEN, "FORBIDDEN");
+    }
+    return res.status(StatusCodes.OK).json({ booking });
   })
 );
 
@@ -117,6 +197,13 @@ bookingsRouter.post(
     const booking = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
     if (booking.providerId !== req.auth!.userId) {
       throw new AppError("Only provider can prepare start OTP", StatusCodes.FORBIDDEN, "FORBIDDEN");
+    }
+    if (!booking.depositPaidAt) {
+      throw new AppError(
+        "Deposit must be collected before generating the start OTP",
+        StatusCodes.CONFLICT,
+        "DEPOSIT_REQUIRED"
+      );
     }
     const otp = `${Math.floor(100000 + Math.random() * 900000)}`;
     const updated = await prisma.$transaction(async (tx) => {

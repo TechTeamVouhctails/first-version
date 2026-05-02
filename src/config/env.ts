@@ -1,7 +1,10 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+dotenv.config({ path: path.join(repoRoot, ".env") });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -9,12 +12,15 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SUPABASE_URL: z.string().url(),
   SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_JWKS_URL: z.string().url(),
-  RAZORPAY_KEY_ID: z.string().min(1),
-  RAZORPAY_KEY_SECRET: z.string().min(1),
-  RAZORPAY_WEBHOOK_SECRET: z.string().min(1),
+  SUPABASE_JWKS_URL: z.string().url().optional(),
+  RAZORPAY_KEY_ID: z.string().min(1).optional(),
+  RAZORPAY_KEY_SECRET: z.string().min(1).optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
   INTERNAL_PAYOUT_TOKEN: z.string().min(1),
-  CORS_ORIGIN: z.string().default("http://localhost:3000")
+  CORS_ORIGIN: z
+    .string()
+    .default("http://localhost:3000")
+    .describe("Comma-separated allowed browser origins for REST + Socket.IO")
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -24,11 +30,46 @@ if (!parsed.success) {
   throw new Error("Invalid environment variables");
 }
 
+const { NODE_ENV } = parsed.data;
+const isProduction = NODE_ENV === "production";
+
+if (isProduction && !parsed.data.SUPABASE_JWKS_URL) {
+  throw new Error("SUPABASE_JWKS_URL is required in production.");
+}
+if (
+  isProduction &&
+  (!parsed.data.RAZORPAY_KEY_ID || !parsed.data.RAZORPAY_KEY_SECRET || !parsed.data.RAZORPAY_WEBHOOK_SECRET)
+) {
+  throw new Error("RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and RAZORPAY_WEBHOOK_SECRET are required in production.");
+}
+
+const supabaseOrigin = parsed.data.SUPABASE_URL.replace(/\/$/, "");
+const supabaseJwksUrl =
+  parsed.data.SUPABASE_JWKS_URL ?? `${supabaseOrigin}/auth/v1/.well-known/jwks.json`;
+
+const razorpayKeyId = parsed.data.RAZORPAY_KEY_ID ?? "rzp_test_dev_placeholder";
+const razorpayKeySecret = parsed.data.RAZORPAY_KEY_SECRET ?? "rzp_secret_dev_placeholder";
+const razorpayWebhookSecret = parsed.data.RAZORPAY_WEBHOOK_SECRET ?? "whsec_dev_placeholder";
+
+const corsOrigins = parsed.data.CORS_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean);
+
 const dbUrl = parsed.data.DATABASE_URL;
-if (dbUrl.includes("[PASSWORD]") || dbUrl.includes("[SUPABASE_REF]") || dbUrl.includes("<URL_ENCODED_DB_PASSWORD>")) {
+if (
+  dbUrl.includes("[PASSWORD]") ||
+  dbUrl.includes("[SUPABASE_REF]") ||
+  dbUrl.includes("<URL_ENCODED_DB_PASSWORD>")
+) {
   throw new Error(
-    "DATABASE_URL contains placeholder values. Set a real Supabase Postgres URL and URL-encode the password."
+    "DATABASE_URL contains placeholder values. Set a real Postgres URL (local Docker or Supabase) and URL-encode special characters in the password."
   );
 }
 
-export const env = parsed.data;
+export const env = {
+  ...parsed.data,
+  NODE_ENV,
+  SUPABASE_JWKS_URL: supabaseJwksUrl,
+  RAZORPAY_KEY_ID: razorpayKeyId,
+  RAZORPAY_KEY_SECRET: razorpayKeySecret,
+  RAZORPAY_WEBHOOK_SECRET: razorpayWebhookSecret,
+  CORS_ORIGINS: corsOrigins
+};

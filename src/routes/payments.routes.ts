@@ -1,6 +1,5 @@
-import { createHmac } from "crypto";
-import { PaymentStage, Prisma } from "@prisma/client";
-import express, { Router } from "express";
+import { PaymentStage } from "@prisma/client";
+import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
 import { env } from "../config/env.js";
 import { authMiddleware } from "../middleware/auth.js";
@@ -8,33 +7,11 @@ import { criticalActionRateLimiter } from "../middleware/rateLimit.js";
 import { requireRole } from "../middleware/rbac.js";
 import { validate } from "../middleware/validate.js";
 import { createOrderSchema, payoutReleaseSchema, verifyPaymentSchema } from "../schemas/payment.schema.js";
-import { confirmPayment, createPaymentOrder, processWebhook, releasePayout } from "../services/paymentService.js";
+import { confirmPayment, createPaymentOrder, releasePayout } from "../services/paymentService.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
 
 export const paymentsRouter = Router();
-
-paymentsRouter.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  asyncHandler(async (req, res) => {
-    const signature = req.headers["x-razorpay-signature"];
-    const bodyBuffer = req.body as Buffer;
-
-    if (!signature || typeof signature !== "string") {
-      throw new AppError("Missing webhook signature", StatusCodes.UNAUTHORIZED, "INVALID_WEBHOOK_SIGNATURE");
-    }
-
-    const digest = createHmac("sha256", env.RAZORPAY_WEBHOOK_SECRET).update(bodyBuffer).digest("hex");
-    if (digest !== signature) {
-      throw new AppError("Invalid webhook signature", StatusCodes.UNAUTHORIZED, "INVALID_WEBHOOK_SIGNATURE");
-    }
-
-    const event = JSON.parse(bodyBuffer.toString("utf8")) as { id: string; event: string };
-    const result = await processWebhook(event.id, event.event, event as unknown as Prisma.InputJsonValue);
-    return res.status(StatusCodes.OK).json({ ok: true, result });
-  })
-);
 
 paymentsRouter.use(authMiddleware);
 

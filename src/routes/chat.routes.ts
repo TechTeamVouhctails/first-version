@@ -5,6 +5,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { criticalActionRateLimiter } from "../middleware/rateLimit.js";
 import { softLockMiddleware } from "../middleware/softLock.js";
 import { validate } from "../middleware/validate.js";
+import { getSocketIo } from "../realtime/socket.js";
 import { listMessagesSchema, sendMessageSchema } from "../schemas/chat.schema.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
@@ -41,6 +42,19 @@ chatRouter.post(
         body
       }
     });
+
+    const io = getSocketIo();
+    if (io) {
+      io.to(`booking:${bookingId}`).emit("chat:new-message", {
+        id: message.id,
+        bookingId: message.bookingId,
+        senderId: message.senderId,
+        receiverId: message.receiverId,
+        body: message.body,
+        createdAt: message.createdAt.toISOString()
+      });
+    }
+
     return res.status(StatusCodes.CREATED).json({ message });
   })
 );

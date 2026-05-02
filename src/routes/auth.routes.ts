@@ -2,6 +2,7 @@ import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
 import { prisma } from "../config/prisma.js";
 import { supabaseClient } from "../config/supabase.js";
+import { env } from "../config/env.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { otpRateLimiter } from "../middleware/rateLimit.js";
 import { validate } from "../middleware/validate.js";
@@ -10,6 +11,29 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../utils/errors.js";
 
 export const authRouter = Router();
+
+/** Supabase phone OTP requires an SMS hook/provider in project settings — errors are opaque otherwise. */
+function otpSendExplain(supabaseMessage: string) {
+  const m = supabaseMessage.toLowerCase();
+  const phoneMisconfig =
+    m.includes("unsupported phone") ||
+    m.includes("phone provider") ||
+    m.includes("sms provider") ||
+    m.includes("phone signups are disabled") ||
+    (m.includes("provider") && m.includes("sms"));
+  if (!phoneMisconfig) return { summary: supabaseMessage };
+
+  return {
+    summary:
+      "Phone (SMS) sign-in is not fully configured on your Supabase project, so OTP cannot be sent.",
+    supabase_error: supabaseMessage,
+    fix: [
+      "Supabase Dashboard → Authentication → Providers → Phone → enable Phone provider.",
+      "Under the same Phone section: configure SMS (built-in Trial for dev, Twilio/MessageBird/etc. for production) or a Send SMS hook.",
+      `Confirm JWT signing and Auth URL match this backend (project: ${env.SUPABASE_URL}).`
+    ]
+  };
+}
 
 authRouter.post(
   "/send-otp",
@@ -22,7 +46,8 @@ authRouter.post(
       options: { shouldCreateUser: true }
     });
     if (error) {
-      throw new AppError(error.message, StatusCodes.BAD_REQUEST, "OTP_SEND_FAILED");
+      const explained = otpSendExplain(error.message);
+      throw new AppError(explained.summary, StatusCodes.BAD_REQUEST, "OTP_SEND_FAILED", explained);
     }
     return res.status(StatusCodes.OK).json({ success: true });
   })

@@ -9,6 +9,29 @@ import { usersRouter } from "./users.routes.js";
 
 export const apiRouter = Router();
 
+apiRouter.get("/", (_req, res) => {
+  return res.status(200).json({
+    service: "vouchtails-core",
+    message: "API root — use nested paths (this is not a collection endpoint).",
+    health: "/health",
+    routes: [
+      "POST /api/auth/send-otp",
+      "POST /api/auth/verify-otp",
+      "POST /api/auth/set-role",
+      "GET  /api/users/me",
+      "GET  /api/pets",
+      "POST /api/pets",
+      "GET  /api/providers/me",
+      "GET  /api/providers/nearby",
+      "GET  /api/providers/match",
+      "GET  /api/bookings",
+      "POST /api/bookings",
+      "POST /api/payments/create-order",
+      "POST /api/payments/webhook (Razorpay; raw JSON body)"
+    ]
+  });
+});
+
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/users", usersRouter);
 apiRouter.use("/pets", petsRouter);

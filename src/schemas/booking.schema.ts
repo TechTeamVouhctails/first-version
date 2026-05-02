@@ -5,6 +5,41 @@ const bookingIdParams = z.object({
   bookingId: z.string().cuid()
 });
 
+const activeStates: BookingState[] = [
+  BookingState.REQUESTED,
+  BookingState.CONFIRMED,
+  BookingState.OTP_READY,
+  BookingState.IN_PROGRESS,
+  BookingState.PENDING_END_OTP,
+  BookingState.PENDING_PAYMENT,
+  BookingState.PAYOUT_PENDING
+];
+
+const pastStates: BookingState[] = [
+  BookingState.COMPLETED,
+  BookingState.PAID_OUT,
+  BookingState.CANCELLED_BY_OWNER,
+  BookingState.CANCELLED_BY_PROVIDER,
+  BookingState.DISPUTED
+];
+
+export const listBookingsSchema = z.object({
+  params: z.object({}).default({}),
+  query: z.object({
+    as: z.enum(["owner", "provider", "all"]).optional(),
+    scope: z.enum(["active", "past", "all"]).default("all"),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+    cursor: z.string().cuid().optional()
+  }),
+  body: z.object({}).default({})
+});
+
+export function bookingScopeStates(scope: "active" | "past" | "all"): BookingState[] | undefined {
+  if (scope === "active") return activeStates;
+  if (scope === "past") return pastStates;
+  return undefined;
+}
+
 export const createBookingSchema = z.object({
   params: z.object({}).default({}),
   query: z.object({}).default({}),

@@ -1,11 +1,19 @@
 import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
+import { env } from "../config/env.js";
 import { verifySupabaseJwt } from "../config/supabase.js";
+
+let ioRef: Server | null = null;
+
+export function getSocketIo(): Server | null {
+  return ioRef;
+}
 
 export function initSocket(server: HttpServer) {
   const io = new Server(server, {
     cors: {
-      origin: "*"
+      origin: env.CORS_ORIGINS,
+      methods: ["GET", "POST"]
     }
   });
 
@@ -28,14 +36,14 @@ export function initSocket(server: HttpServer) {
       socket.join(`booking:${bookingId}`);
     });
 
-    socket.on("chat:message", (payload: { bookingId: string; body: string; senderId: string; receiverId: string }) => {
-      io.to(`booking:${payload.bookingId}`).emit("chat:new-message", payload);
-    });
-
-    socket.on("session:location", (payload: { bookingId: string; latitude: number; longitude: number; speedKmph?: number }) => {
-      io.to(`booking:${payload.bookingId}`).emit("session:location:update", payload);
-    });
+    socket.on(
+      "session:location",
+      (payload: { bookingId: string; latitude: number; longitude: number; speedKmph?: number }) => {
+        io.to(`booking:${payload.bookingId}`).emit("session:location:update", payload);
+      }
+    );
   });
 
+  ioRef = io;
   return io;
 }
