@@ -9,6 +9,7 @@ export type BookingState =
   | "IN_PROGRESS"
   | "PENDING_END_OTP"
   | "PENDING_PAYMENT"
+  | "PAYMENT_LOCKED"
   | "COMPLETED"
   | "PAYOUT_PENDING"
   | "PAID_OUT"

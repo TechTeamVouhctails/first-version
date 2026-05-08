@@ -26,6 +26,7 @@ enum BookingState {
   IN_PROGRESS
   PENDING_END_OTP
   PENDING_PAYMENT
+  PAYMENT_LOCKED
   COMPLETED
   PAYOUT_PENDING
   PAID_OUT
@@ -66,6 +67,7 @@ model User {
   sentMessages    ChatMessage[]   @relation("MessageSender")
   recvMessages    ChatMessage[]   @relation("MessageReceiver")
   transitions     BookingStateLog[]
+  providerPayouts ProviderPayout[]
 }
 
 model Pet {
@@ -86,22 +88,24 @@ model Pet {
 }
 
 model ProviderProfile {
-  id               String        @id @default(cuid())
-  userId           String        @unique
-  bio              String?
-  serviceTypes     ServiceType[]
-  baseRate         Decimal       @db.Decimal(10, 2)
-  rating           Decimal       @default(5.0) @db.Decimal(3, 2)
-  completedJobs    Int           @default(0)
-  latitude         Decimal       @db.Decimal(10, 7)
-  longitude        Decimal       @db.Decimal(10, 7)
-  radiusKm         Int           @default(10)
-  isVerified       Boolean       @default(false)
-  isAvailable      Boolean       @default(true)
-  city             String        @default("Chennai")
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                       String        @id @default(cuid())
+  userId                   String        @unique
+  /// Linked Route account id (`acc_*`) for Razorpay Route splits; leave null for pilot / manual payout.
+  routeLinkedAccountId     String?
+  bio                      String?
+  serviceTypes             ServiceType[]
+  baseRate                 Decimal       @db.Decimal(10, 2)
+  rating                   Decimal       @default(5.0) @db.Decimal(3, 2)
+  completedJobs            Int           @default(0)
+  latitude                 Decimal       @db.Decimal(10, 7)
+  longitude                Decimal       @db.Decimal(10, 7)
+  radiusKm                 Int           @default(10)
+  isVerified               Boolean       @default(false)
+  isAvailable              Boolean       @default(true)
+  city                     String        @default("Chennai")
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  user                     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([city, isAvailable])
   @@index([latitude, longitude])
@@ -127,6 +131,7 @@ model Booking {
   otpEndHash       String?
   depositPaidAt    DateTime?
   finalPaidAt      DateTime?
+  paymentLockedAt  DateTime?
   completedAt      DateTime?
   payoutReleasedAt DateTime?
   createdAt        DateTime            @default(now())
@@ -135,6 +140,9 @@ model Booking {
   provider         User                @relation("ProviderBookings", fields: [providerId], references: [id], onDelete: Restrict)
   pet              Pet                 @relation(fields: [petId], references: [id], onDelete: Restrict)
   transactions     PaymentTransaction[]
+  escrowTransactions EscrowTransaction[]
+  payouts          ProviderPayout[]
+  webhookEvents    WebhookEvent[]
   messages         ChatMessage[]
   sessionTracks    SessionTracking[]
   stateLogs        BookingStateLog[]
@@ -160,9 +168,92 @@ model PaymentTransaction {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  escrowTransaction EscrowTransaction?
 
   @@index([bookingId, stage, status])
   @@index([status, createdAt])
+}
+
+model EscrowTransaction {
+  id                   String             @id @default(cuid())
+  bookingId            String
+  paymentTransactionId String             @unique
+  stage                PaymentStage
+  grossAmount          Decimal            @db.Decimal(10, 2)
+  platformFee          Decimal            @db.Decimal(10, 2)
+  providerAmount       Decimal            @db.Decimal(10, 2)
+  status               PaymentStatus      @default(CAPTURED)
+  releasedAt           DateTime?
+  metadata             Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  booking              Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  paymentTransaction   PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, stage, status])
+}
+
+model WebhookEvent {
+  id             String   @id @default(cuid())
+  bookingId      String?
+  dedupeKey      String   @unique
+  eventType      String
+  razorpayEventId String?
+  orderId        String?
+  paymentId      String?
+  signature      String?
+  payload        Json?
+  status         String
+  errorMessage   String?
+  processedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  booking        Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@index([bookingId, createdAt])
+}
+
+model ProviderPayout {
+  id                 String   @id @default(cuid())
+  bookingId          String
+  providerId         String
+  amount             Decimal  @db.Decimal(10, 2)
+  status             String
+  payoutMode         String   @default("MANUAL_BANK_TRANSFER")
+  eligibleAt         DateTime
+  releasedAt         DateTime?
+  reference          String?
+  notes              String?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  booking            Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  provider           User     @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId])
+  @@index([providerId, status, eligibleAt])
+}
+
+model PaymentAuditLog {
+  id             String   @id @default(cuid())
+  bookingId      String?
+  paymentId      String?
+  payoutId       String?
+  webhookEventId String?
+  transferId     String?
+  stage          String?
+  severity       String
+  eventType      String
+  message        String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([bookingId, createdAt])
+  @@index([payoutId, createdAt])
+  @@index([paymentId, createdAt])
+  @@index([webhookEventId, createdAt])
+  @@index([severity, createdAt])
 }
 
 model ChatMessage {

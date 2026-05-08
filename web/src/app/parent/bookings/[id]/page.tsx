@@ -222,7 +222,8 @@ export default function ParentBookingDetailPage() {
     );
   }
 
-  const canPayDeposit = booking.state === "CONFIRMED" || booking.state === "OTP_READY";
+  const canPayDeposit =
+    booking.state === "REQUESTED" || booking.state === "CONFIRMED" || booking.state === "OTP_READY";
   const canStartSession = booking.state === "OTP_READY";
   const canEndSession = booking.state === "PENDING_END_OTP";
   const canPayFinal = booking.state === "PENDING_PAYMENT";

@@ -12,7 +12,7 @@ export async function softLockMiddleware(req: Request, _res: Response, next: Nex
   const pending = await prisma.booking.findFirst({
     where: {
       OR: [{ ownerId: req.auth.userId }, { providerId: req.auth.userId }],
-      state: BookingState.PENDING_PAYMENT
+      state: { in: [BookingState.PENDING_PAYMENT, BookingState.PAYMENT_LOCKED] }
     },
     select: { id: true }
   });

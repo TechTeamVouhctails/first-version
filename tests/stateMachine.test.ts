@@ -5,6 +5,8 @@ describe("validateStateTransition", () => {
   it("allows valid transition", () => {
     expect(() => validateStateTransition("REQUESTED", "CONFIRMED")).not.toThrow();
     expect(() => validateStateTransition("PENDING_END_OTP", "PENDING_PAYMENT")).not.toThrow();
+    expect(() => validateStateTransition("PENDING_PAYMENT", "PAYMENT_LOCKED")).not.toThrow();
+    expect(() => validateStateTransition("PAYMENT_LOCKED", "COMPLETED")).not.toThrow();
     expect(() => validateStateTransition("COMPLETED", "PAYOUT_PENDING")).not.toThrow();
   });
 

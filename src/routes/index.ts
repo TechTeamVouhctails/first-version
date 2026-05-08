@@ -27,6 +27,20 @@ apiRouter.get("/", (_req, res) => {
       "GET  /api/bookings",
       "POST /api/bookings",
       "POST /api/payments/create-order",
+      "POST /api/payments/verify-payment",
+      "POST /api/payments/verify",
+      "GET  /api/payments/:bookingId/status",
+      "POST /api/payments/internal/payouts/process-due",
+      "POST /api/payments/internal/payouts/retry-failed",
+      "GET  /api/payments/internal/health",
+      "GET  /api/payments/internal/reconcile/:bookingId",
+      "GET  /api/payments/internal/reconcile",
+      "GET  /api/payments/internal/reconcile/export",
+      "POST /api/payments/internal/webhook/replay",
+      "POST /api/payments/internal/payouts/:bookingId/mark-released",
+      "POST /api/payments/internal/payouts/:bookingId/set-status",
+      "POST /api/payments/internal/bookings/:bookingId/repair-state",
+      "POST /api/payments/internal/failure-simulate",
       "POST /api/payments/webhook (Razorpay; raw JSON body)"
     ]
   });

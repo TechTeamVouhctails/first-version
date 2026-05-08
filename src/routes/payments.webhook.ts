@@ -1,10 +1,15 @@
-import { createHmac } from "crypto";
 import type { Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
-import { Prisma } from "@prisma/client";
-import { env } from "../config/env.js";
-import { processWebhook } from "../services/paymentService.js";
+import { logger } from "../config/logger.js";
+import { appendPaymentAuditLog } from "../lib/payments/audit.js";
+import { verifyRazorpayWebhookSignature } from "../lib/razorpay.js";
+import { processWebhook, resolveWebhookDedupeKey } from "../services/paymentService.js";
 import { AppError } from "../utils/errors.js";
+
+type RazorpayWebhookBody = {
+  id?: unknown;
+  event?: unknown;
+};
 
 export async function handleRazorpayWebhook(req: Request, res: Response) {
   const signature = req.headers["x-razorpay-signature"];
@@ -14,12 +19,39 @@ export async function handleRazorpayWebhook(req: Request, res: Response) {
     throw new AppError("Missing webhook signature", StatusCodes.UNAUTHORIZED, "INVALID_WEBHOOK_SIGNATURE");
   }
 
-  const digest = createHmac("sha256", env.RAZORPAY_WEBHOOK_SECRET).update(bodyBuffer).digest("hex");
-  if (digest !== signature) {
+  if (!verifyRazorpayWebhookSignature(bodyBuffer, signature)) {
     throw new AppError("Invalid webhook signature", StatusCodes.UNAUTHORIZED, "INVALID_WEBHOOK_SIGNATURE");
   }
 
-  const event = JSON.parse(bodyBuffer.toString("utf8")) as { id: string; event: string };
-  const result = await processWebhook(event.id, event.event, event as unknown as Prisma.InputJsonValue);
-  return res.status(StatusCodes.OK).json({ ok: true, result });
+  let parsed: RazorpayWebhookBody;
+  try {
+    parsed = JSON.parse(bodyBuffer.toString("utf8")) as RazorpayWebhookBody;
+  } catch {
+    return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: "invalid_json" });
+  }
+
+  const eventType = typeof parsed.event === "string" ? parsed.event : "";
+  if (!eventType) {
+    return res.status(StatusCodes.OK).json({ ok: true, result: { ignored: true as const, reason: "missing_event" as const } });
+  }
+
+  const dedupeKey = resolveWebhookDedupeKey(parsed);
+  if (!dedupeKey) {
+    return res.status(StatusCodes.OK).json({ ok: true, result: { ignored: true as const, reason: "missing_event_id" as const } });
+  }
+
+  try {
+    const result = await processWebhook(dedupeKey, eventType, parsed);
+    logger.info({ webhookEventId: dedupeKey, eventType, result }, "Webhook lifecycle processed");
+    return res.status(StatusCodes.OK).json({ ok: true, result });
+  } catch (error) {
+    await appendPaymentAuditLog({
+      severity: "CRITICAL",
+      eventType: "WEBHOOK_ROUTE_FAILURE",
+      message: "Webhook route handler failed",
+      webhookEventId: dedupeKey,
+      metadata: { error: error instanceof Error ? error.message : "unknown_error", eventType }
+    });
+    throw error;
+  }
 }

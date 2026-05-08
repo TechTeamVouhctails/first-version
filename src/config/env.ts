@@ -17,6 +17,8 @@ const envSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().min(1).optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
   INTERNAL_PAYOUT_TOKEN: z.string().min(1),
+  /** Market fee on gross (e.g. 0.175 = 17.5%). Omit to use pilot default from product spec. */
+  PLATFORM_COMMISSION_RATE: z.coerce.number().min(0).max(1).optional(),
   CORS_ORIGIN: z
     .string()
     .default("http://localhost:3000")
@@ -64,6 +66,12 @@ if (
   );
 }
 
+const platformCommissionRate =
+  parsed.data.PLATFORM_COMMISSION_RATE === undefined ? 0.175 : parsed.data.PLATFORM_COMMISSION_RATE;
+
+const routeSplitsRaw = process.env.RAZORPAY_ROUTE_SPLITS_ENABLED;
+const routeSplitsEnabled = routeSplitsRaw === "true" || routeSplitsRaw === "1";
+
 export const env = {
   ...parsed.data,
   NODE_ENV,
@@ -71,5 +79,7 @@ export const env = {
   RAZORPAY_KEY_ID: razorpayKeyId,
   RAZORPAY_KEY_SECRET: razorpayKeySecret,
   RAZORPAY_WEBHOOK_SECRET: razorpayWebhookSecret,
+  PLATFORM_COMMISSION_RATE: platformCommissionRate,
+  RAZORPAY_ROUTE_SPLITS_ENABLED: routeSplitsEnabled,
   CORS_ORIGINS: corsOrigins
 };

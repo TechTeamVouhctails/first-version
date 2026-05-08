@@ -12,6 +12,7 @@ const activeStates: BookingState[] = [
   BookingState.IN_PROGRESS,
   BookingState.PENDING_END_OTP,
   BookingState.PENDING_PAYMENT,
+  BookingState.PAYMENT_LOCKED,
   BookingState.PAYOUT_PENDING
 ];
 
